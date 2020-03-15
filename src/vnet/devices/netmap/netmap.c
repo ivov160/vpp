@@ -78,7 +78,7 @@ close_netmap_if (netmap_main_t * nm, netmap_if_t * nif)
   mhash_unset (&nm->if_index_by_host_if_name, nif->host_if_name,
 	       &nif->if_index);
   vec_free (nif->host_if_name);
-  vec_free (nif->req);
+  vec_free (nif->nm_reg);
 
   clib_memset (nif, 0, sizeof (*nif));
   pool_put (nm->interfaces, nif);
@@ -123,7 +123,8 @@ netmap_create_if (vlib_main_t * vm, u8 * if_name, u8 * hw_addr_set,
   vnet_sw_interface_t *sw;
   vnet_main_t *vnm = vnet_get_main ();
   uword *p;
-  struct nmreq *req = 0;
+  struct nmreq_header *nm_req_hdr = 0;
+  struct nmreq_register *nm_reg = 0;
   netmap_mem_region_t *reg;
   vlib_thread_main_t *tm = vlib_get_thread_main ();
   int fd;
@@ -141,32 +142,33 @@ netmap_create_if (vlib_main_t * vm, u8 * if_name, u8 * hw_addr_set,
   nif->fd = fd;
   nif->clib_file_index = ~0;
 
-  vec_validate (req, 0);
-  nif->req = req;
-  req->nr_version = NETMAP_API;
-  req->nr_flags = NR_REG_ALL_NIC;
+  vec_validate (nm_reg, 0);
+  vec_validate (nm_req_hdr, 0);
+  nif->nm_reg = nm_reg;
+  nm_req_hdr->nr_version = NETMAP_API;
+  nm_req_hdr->nr_reqtype = NETMAP_REQ_REGISTER;
+  nm_req_hdr->nr_body = (uintptr_t) nm_reg;
 
   if (is_pipe)
-    req->nr_flags = is_master ? NR_REG_PIPE_MASTER : NR_REG_PIPE_SLAVE;
-  else
-    req->nr_flags = NR_REG_ALL_NIC;
+    nm_reg->nr_flags = is_master ? NR_REG_PIPE_MASTER : NR_REG_PIPE_SLAVE;
 
-  req->nr_flags |= NR_ACCEPT_VNET_HDR;
-  snprintf (req->nr_name, IFNAMSIZ, "%s", if_name);
-  req->nr_name[IFNAMSIZ - 1] = 0;
+  nm_reg->nr_flags |= NR_ACCEPT_VNET_HDR;
+  nm_reg->nr_mode = NR_REG_ALL_NIC;
+  snprintf (nm_req_hdr->nr_name, IFNAMSIZ, "%s", if_name);
+  nm_req_hdr->nr_name[IFNAMSIZ - 1] = 0;
 
-  if (ioctl (nif->fd, NIOCREGIF, req))
+  if (ioctl (nif->fd, NIOCCTRL, nm_req_hdr))
     {
       ret = VNET_API_ERROR_NOT_CONNECTED;
       goto error;
     }
 
-  nif->mem_region = req->nr_arg2;
+  nif->mem_region = nm_reg->nr_mem_id;
   vec_validate (nm->mem_regions, nif->mem_region);
   reg = &nm->mem_regions[nif->mem_region];
   if (reg->region_size == 0)
     {
-      reg->mem = mmap (NULL, req->nr_memsize, PROT_READ | PROT_WRITE,
+      reg->mem = mmap (NULL, nm_reg->nr_memsize, PROT_READ | PROT_WRITE,
 		       MAP_SHARED, fd, 0);
       clib_warning ("mem %p", reg->mem);
       if (reg->mem == MAP_FAILED)
@@ -174,11 +176,11 @@ netmap_create_if (vlib_main_t * vm, u8 * if_name, u8 * hw_addr_set,
 	  ret = VNET_API_ERROR_NOT_CONNECTED;
 	  goto error;
 	}
-      reg->region_size = req->nr_memsize;
+      reg->region_size = nm_reg->nr_memsize;
     }
   reg->refcnt++;
 
-  nif->nifp = NETMAP_IF (reg->mem, req->nr_offset);
+  nif->nifp = NETMAP_IF (reg->mem, nm_reg->nr_offset);
   nif->first_rx_ring = 0;
   nif->last_rx_ring = 0;
   nif->first_tx_ring = 0;
@@ -238,6 +240,7 @@ netmap_create_if (vlib_main_t * vm, u8 * if_name, u8 * hw_addr_set,
   return 0;
 
 error:
+  vec_free(nm_req_hdr);
   close_netmap_if (nm, nif);
   return ret;
 }

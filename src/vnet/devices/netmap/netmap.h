@@ -56,7 +56,7 @@ typedef struct
   u8 is_admin_up;
 
   /* netmap */
-  struct nmreq *req;
+  struct nmreq_register *nm_reg;
   u16 mem_region;
   int fd;
   struct netmap_if *nifp;

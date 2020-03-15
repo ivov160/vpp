@@ -72,16 +72,16 @@ format_netmap_device (u8 * s, va_list * args)
 		  "\n%U region %u memsize 0x%x offset 0x%x"
 		  "\n%U tx_slots %u rx_slots %u tx_rings %u rx_rings %u",
 		  format_white_space, indent + 2,
-		  nif->req->nr_version,
-		  nif->req->nr_flags,
+		  NETMAP_API,
+		  nif->nm_reg->nr_flags,
 		  format_white_space, indent + 2,
 		  nif->mem_region,
-		  nif->req->nr_memsize,
-		  nif->req->nr_offset,
+		  nif->nm_reg->nr_memsize,
+		  nif->nm_reg->nr_offset,
 		  format_white_space, indent + 2,
-		  nif->req->nr_tx_slots,
-		  nif->req->nr_rx_slots,
-		  nif->req->nr_tx_rings, nif->req->nr_rx_rings);
+		  nif->nm_reg->nr_tx_slots,
+		  nif->nm_reg->nr_rx_slots,
+		  nif->nm_reg->nr_tx_rings, nif->nm_reg->nr_rx_rings);
     }
   return s;
 }
